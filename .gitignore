@@ -1,0 +1,92 @@
+# Claude workspace gitignore
+
+# Personal development projects (exclude all projects except the claude-workspace setup)
+projects/claude-code-deobfuscation/
+
+# Claude data directories - these contain temporary/cached data
+projects/claude-workspace/claude-data/
+projects/claude-workspace/claude-scratch/
+
+# Configuration files that may contain sensitive data
+projects/claude-workspace/claude-config/settings.local.json
+projects/claude-workspace/claude-config/config.local.json
+.claude/
+
+# Setup marker file (container-specific)
+.setup-complete
+
+# Common development directories and files
+**/node_modules/
+**/venv/
+**/target/
+**/build/
+**/dist/
+**/.next/
+**/.nuxt/
+**/.output/
+
+# IDE and editor files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+*.iml
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Logs
+*.log
+**/*.log
+
+# Package manager files
+**/package-lock.json
+**/yarn.lock
+**/pnpm-lock.yaml
+
+# Environment files
+**/.env
+**/.env.local
+**/.env.*.local
+
+# Docker volumes and build artifacts
+.docker-data/
+docker-data/
+
+# Temporary files
+tmp/
+temp/
+scratch/
+
+# Git files from nested repos (if any)
+**/.git/
+
+# Compiled binaries and artifacts
+**/*.class
+**/*.jar
+**/*.war
+**/*.ear
+**/*.pyc
+**/__pycache__/
+**/*.o
+**/*.so
+
+# Test output
+**/coverage/
+**/.coverage
+**/test-results/
+
+# Security files
+**/*.pem
+**/*.key
+**/*.p12
+**/*.jks
+**/*.gpg
+**/terraform.tfvars

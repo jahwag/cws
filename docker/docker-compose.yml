@@ -1,0 +1,32 @@
+services:
+  claude-workspace:
+    image: ${CWS_IMAGE:-cws:local}
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: claude-workspace
+    ports:
+      - "8080:8080"
+    security_opt:
+      - no-new-privileges:true  # Prevent privilege escalation
+    volumes:
+      # Persistent home directories mounted from host - survives everything!
+      - ${CLAUDE_USERS_HOME:-$HOME/.claude-workspace/users}:/home:rw
+      # Optional CLAUDE.md guidelines (if exists)
+      - $HOME/.config/claude-workspace/CLAUDE.md:/etc/claude/CLAUDE.md:ro
+    # Users start in their own home directory
+    working_dir: /home
+    environment:
+      - JAVA_HOME=/usr/lib/jvm/default-java
+      - PORT=8080
+      - GIT_USER_NAME=${GIT_USER_NAME:-Claude User}
+      - GIT_USER_EMAIL=${GIT_USER_EMAIL:-user@example.com}
+      # OAuth2/OIDC Configuration
+      - OIDC_ENABLED=${OIDC_ENABLED:-false}
+      - OIDC_CLIENT_ID=${OIDC_CLIENT_ID}
+      - OIDC_CLIENT_SECRET=${OIDC_CLIENT_SECRET}
+      - OIDC_ISSUER=${OIDC_ISSUER}
+      - OIDC_REDIRECT_URI=${OIDC_REDIRECT_URI:-http://localhost:8080/auth/callback}
+    restart: unless-stopped
+
+# No named volumes needed - everything is host-mounted
