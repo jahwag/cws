@@ -1,125 +1,105 @@
-# Claude's Development Environment with Web UI
-# A containerized workspace with web-based access to Claude CLI
-# Version: 1.0.1
+# Ultra-minimal build with aggressive optimization
+# Stage 1: Build frontend
+FROM node:20-alpine AS frontend-builder
 
-# Build stage for Nuxt frontend
-FROM node:20-alpine AS node-builder
-WORKDIR /build
-COPY web/client/package.json ./
+WORKDIR /frontend
+COPY web/client/package*.json ./
 RUN npm install
 COPY web/client/ ./
 RUN npm run generate
 
-# Final runtime image
+# Stage 2: Build server with optimization
+FROM node:20-alpine AS server-builder
+
+WORKDIR /server
+# Use virtual packages for build dependencies
+RUN apk add --no-cache --virtual .build-deps make g++ python3-dev
+COPY web/server/package*.json ./
+RUN npm install --only=production && \
+    # Remove unnecessary files from node_modules
+    find node_modules -type f -name "*.md" -delete && \
+    find node_modules -type f -name "*.txt" -delete && \
+    find node_modules -type f -name "*.yml" -delete && \
+    find node_modules -type f -name "*.yaml" -delete && \
+    find node_modules -type f -name ".npmignore" -delete && \
+    find node_modules -type f -name ".gitignore" -delete && \
+    find node_modules -type d -name "test" -exec rm -rf {} + 2>/dev/null || true && \
+    find node_modules -type d -name "tests" -exec rm -rf {} + 2>/dev/null || true && \
+    find node_modules -type d -name "docs" -exec rm -rf {} + 2>/dev/null || true && \
+    find node_modules -type d -name "example" -exec rm -rf {} + 2>/dev/null || true && \
+    find node_modules -type d -name "examples" -exec rm -rf {} + 2>/dev/null || true && \
+    find node_modules -type d -name ".github" -exec rm -rf {} + 2>/dev/null || true && \
+    # Remove source maps
+    find node_modules -type f -name "*.map" -delete && \
+    # Clean up build dependencies
+    apk del .build-deps
+
+# Stage 3: Build Claude CLI with optimization
+FROM node:20-alpine AS claude-builder
+
+WORKDIR /claude
+RUN npm install --prefix /claude @anthropic-ai/claude-code && \
+    # Remove unnecessary files from Claude CLI
+    find /claude/node_modules -type f -name "*.md" -delete && \
+    find /claude/node_modules -type f -name "*.txt" -delete && \
+    find /claude/node_modules -type d -name "test" -exec rm -rf {} + 2>/dev/null || true && \
+    find /claude/node_modules -type d -name "docs" -exec rm -rf {} + 2>/dev/null || true
+
+# Stage 4: Minimal runtime with precise copying
 FROM alpine:3.19
 
-# Install runtime dependencies
+# Install only essential runtime dependencies in one layer
 RUN apk add --no-cache \
     nodejs \
-    npm \
-    python3 \
-    py3-pip \
-    openjdk21-jre \
     git \
-    curl \
     bash \
-    zsh \
     openssh-client \
-    file \
-    && rm -rf /var/cache/apk/*
+    ca-certificates \
+    # User management
+    shadow \
+    sudo \
+    # Firewall (optional but included for compatibility)
+    iptables \
+    ipset && \
+    # Clean APK cache (though --no-cache should handle this)
+    rm -rf /var/cache/apk/* && \
+    # Pre-configure git to avoid runtime operations
+    git config --global init.defaultBranch main && \
+    git config --global user.email "claude@workspace" && \
+    git config --global user.name "Claude" && \
+    # Pre-create SSH directory and known hosts
+    mkdir -p /root/.ssh && \
+    ssh-keyscan -t rsa,ed25519 github.com gitlab.com bitbucket.org >> /root/.ssh/known_hosts 2>/dev/null
 
-# Create npm directory outside of /home to avoid volume mount conflicts
-RUN mkdir -p /opt/claude/.npm-global
+# Copy only production artifacts with precise paths
+COPY --from=server-builder /server/node_modules /claude-workspace/web/server/node_modules
+COPY --from=frontend-builder /frontend/.output/public /claude-workspace/web/client/dist
+COPY --from=claude-builder /claude/node_modules/@anthropic-ai/claude-code /opt/claude/.npm-global/lib/node_modules/@anthropic-ai/claude-code
 
-# Install build dependencies for node-pty
-RUN apk add --no-cache make g++ python3-dev
-
-# Install server dependencies
-WORKDIR /claude-workspace/web/server
-COPY web/server/package.json ./
-RUN npm install --production
-COPY web/server/server.js ./
-
-# Remove build dependencies
-RUN apk del make g++ python3
-
-# Create workspace directory
+# Copy application files
 WORKDIR /claude-workspace
-
-# Copy built artifacts
-COPY --from=node-builder /build/.output/public /claude-workspace/web/client/dist
-
-# Copy MCP servers
+COPY web/server/server.js /claude-workspace/web/server/
 COPY mcp-servers /claude-workspace/mcp-servers
+COPY docker/mcp-config.json /tmp/
+COPY docker/entrypoint.sh docker/init-firewall.sh /usr/local/bin/
 
-# Set up git configuration
-RUN git config --global init.defaultBranch main
-
-# Add GitHub to known hosts
-RUN mkdir -p /root/.ssh && \
-    ssh-keyscan -H github.com >> /root/.ssh/known_hosts
-
-# Create system directories with proper permissions
-RUN mkdir -p /var/lib/claude && \
-    chmod 700 /var/lib/claude && \
-    # Public config directory for non-sensitive files
-    mkdir -p /etc/claude && \
-    chmod 755 /etc/claude
-
-# Mount workspace guidelines from host if provided
-# Guidelines can be placed at ~/.config/claude-workspace/CLAUDE.md
-
-# Install shadow for proper su command and sudo
-RUN apk add --no-cache shadow sudo && \
-    # Fix su permissions
-    chmod u+s /bin/su
-
-# Create a template user for development/fallback only
-RUN if [ -z "$OIDC_ENABLED" ] || [ "$OIDC_ENABLED" != "true" ]; then \
-        adduser -D -s /bin/zsh claude && \
-        echo "claude:claude123" | chpasswd; \
-    fi
-
-# Copy MCP configuration template
-COPY docker/mcp-config.json /tmp/mcp-config.json
-
-# Stay as root for user switching capability
-# USER claude
-# Configure npm to use directory outside of /home mount
-ENV NPM_CONFIG_PREFIX=/opt/claude/.npm-global
-ENV PATH=/opt/claude/.npm-global/bin:$PATH
-
-# Install Claude CLI with explicit prefix configuration
-RUN npm config set prefix /opt/claude/.npm-global && \
-    npm install -g @anthropic-ai/claude-code && \
-    # Verify installation
-    ls -la /opt/claude/.npm-global/lib/node_modules/@anthropic-ai/claude-code/ && \
-    # Check if cli.js exists
-    test -f /opt/claude/.npm-global/lib/node_modules/@anthropic-ai/claude-code/cli.js || \
-    (echo "ERROR: Claude Code cli.js not found after installation" && exit 1)
-
-# Default working directory
-WORKDIR /home
-
-# Fix Claude CLI shebang for Alpine Linux
-RUN sed -i '1s|.*|#!/usr/bin/node --no-warnings --enable-source-maps|' /opt/claude/.npm-global/bin/claude && \
+# Single RUN command for all setup operations
+RUN chmod +x /usr/local/bin/entrypoint.sh /usr/local/bin/init-firewall.sh && \
+    # Create required directories including bin
+    mkdir -p /var/lib/claude /etc/claude /opt/claude/.npm-global/bin && \
+    # Create Claude CLI wrapper
+    echo '#!/usr/bin/node' > /opt/claude/.npm-global/bin/claude && \
+    echo "require('/opt/claude/.npm-global/lib/node_modules/@anthropic-ai/claude-code/dist/index.js')" >> /opt/claude/.npm-global/bin/claude && \
     chmod 755 /opt/claude/.npm-global/bin/claude && \
-    # Make Claude accessible to all users
-    chmod -R 755 /opt/claude/.npm-global && \
-    # Ensure all files are readable
-    find /opt/claude/.npm-global -type f -exec chmod 644 {} \; && \
-    find /opt/claude/.npm-global -type d -exec chmod 755 {} \;
+    # Setup sudo for firewall script
+    echo "ALL ALL=(root) NOPASSWD: /usr/local/bin/init-firewall.sh" > /etc/sudoers.d/firewall && \
+    chmod 0440 /etc/sudoers.d/firewall
 
-# Copy entrypoint script
-COPY docker/entrypoint.sh /usr/local/bin/entrypoint.sh
-RUN chmod +x /usr/local/bin/entrypoint.sh
+# Environment variables
+ENV NPM_CONFIG_PREFIX=/opt/claude/.npm-global \
+    PATH=/opt/claude/.npm-global/bin:$PATH \
+    NODE_ENV=production
 
-# Expose web UI port
+WORKDIR /home
 EXPOSE 8080
-
-# Health check
-HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:8080/health || exit 1
-
-# Start with entrypoint to initialize firewall
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]

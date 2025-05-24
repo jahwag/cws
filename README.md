@@ -20,4 +20,21 @@ OIDC_ISSUER=https://your-oidc-provider.com
 OIDC_REDIRECT_URI=http://localhost:8080/auth/callback
 ```
 
+### Network Restrictions
+
+Enable network access restrictions to limit outbound connections:
+
+```env
+ENABLE_NETWORK_RESTRICTIONS=true
+```
+
+When enabled, only the following connections are allowed:
+- DNS queries
+- GitHub API and repositories
+- npm registry
+- PyPI (Python packages)
+- Docker Hub
+- Your OAuth provider (if configured)
+- Local connections (localhost)
+
 Restart after changes: `cd ~/.claude-workspace && docker compose restart`

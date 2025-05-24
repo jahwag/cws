@@ -8,6 +8,11 @@ const cookieParser = require('cookie-parser');
 const { spawn: spawnChild, exec, execSync } = require('child_process');
 const fs = require('fs');
 
+// Make crypto available globally for oauth4webapi
+if (typeof globalThis.crypto === 'undefined') {
+  globalThis.crypto = crypto.webcrypto;
+}
+
 const app = express();
 const server = http.createServer(app);
 const wss = new WebSocketServer({ server });
@@ -94,7 +99,7 @@ app.get('/auth/login', async (req, res) => {
     const state = randomState();
     
     // Store state in session for verification
-    const stateSession = crypto.randomUUID();
+    const stateSession = require('crypto').randomUUID();
     sessions.set(stateSession, { state, createdAt: Date.now() });
     res.cookie('oauth_state', stateSession, { httpOnly: true, maxAge: 600000 }); // 10 min
     
@@ -156,7 +161,7 @@ app.get('/auth/callback', async (req, res) => {
       // Create OS user
       try {
         console.log(`Creating OS user: ${username}`);
-        execSync(`useradd -m -s /bin/zsh ${username}`);
+        execSync(`useradd -m -s /bin/bash ${username}`);
         console.log(`User ${username} created successfully`);
         
         // Set up user environment
@@ -399,7 +404,7 @@ wss.on('connection', (ws, req) => {
       execSync(`id ${session.username}`, { stdio: 'ignore' });
     } catch (err) {
       console.log(`User ${session.username} doesn't exist, creating...`);
-      execSync(`useradd -s /bin/zsh ${session.username}`);
+      execSync(`useradd -s /bin/bash ${session.username}`);
       console.log(`User ${session.username} created successfully`);
     }
     

@@ -9,6 +9,9 @@ services:
       - "8080:8080"
     security_opt:
       - no-new-privileges:true  # Prevent privilege escalation
+    cap_add:
+      - NET_ADMIN  # Required for iptables/firewall rules
+      - NET_RAW    # Required for raw sockets, ping, and packet manipulation
     volumes:
       # Persistent home directories mounted from host - survives everything!
       - ${CLAUDE_USERS_HOME:-$HOME/.claude-workspace/users}:/home:rw
@@ -27,6 +30,8 @@ services:
       - OIDC_CLIENT_SECRET=${OIDC_CLIENT_SECRET}
       - OIDC_ISSUER=${OIDC_ISSUER}
       - OIDC_REDIRECT_URI=${OIDC_REDIRECT_URI:-http://localhost:8080/auth/callback}
+      # Network restrictions (opt-in)
+      - ENABLE_NETWORK_RESTRICTIONS=${ENABLE_NETWORK_RESTRICTIONS:-false}
     restart: unless-stopped
 
 # No named volumes needed - everything is host-mounted
